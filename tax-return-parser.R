@@ -5,7 +5,7 @@ library(plyr)
 library(dplyr)
 
 # Set the path to the folder containing XML files
-path <- "~/Documents/tyler/xml"
+path <- "./tax-return-parser/files/"
 
 # Get a list of all XML files in the folder
 files <- list.files(path, pattern = ".xml$", full.names = TRUE)
