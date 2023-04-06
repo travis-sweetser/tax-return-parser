@@ -9,7 +9,7 @@ path <- "./Source/tax-return-parser/xml"
 # Get a list of all XML files in the folder
 files <- list.files(path, pattern = ".xml$", full.names = TRUE)
 
-# Specify the properties that should be read from the 990 document.
+# Specify the fields that should be read from the 990 document.
 columns_990 <<- list(
   "GrossReceiptsAmt"="GrossReceiptsAmt",
   "NetIncomeFromGamingGrp"="NetIncomeFromGamingGrp"
@@ -19,7 +19,10 @@ read_xml_to_df2 <- function(file_path) {
   doc <- xmlParse(file_path)
 
   xml_990 <- xmlToDataFrame(nodes=getNodeSet(doc, "//doc:IRS990",namespaces = c(doc="http://www.irs.gov/efile")))
-
+  
+  # Uncomment this line to print all the columns available in the 990
+  # print(names(xml_990))
+  
   # The 990 has lots of properties and several repeatable nodes which leads to problems converting to a datatable.
   # So reading the entire node, but then removing every column except for those defined in columns_990 before combining all the dataframes together.
   selected_columns <- intersect(names(xml_990), names(columns_990))
@@ -54,4 +57,4 @@ for (i in seq_along(files)) {
 }
 
 # Unions each dataframe and matches on the column names to output a datatable.
-my_df <- bind_rows(df_list)
+df_table <- bind_rows(df_list)
