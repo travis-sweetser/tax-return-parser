@@ -1,57 +1,57 @@
-###### This section works, but the loop doesn't work with 990s with different paths..
 # Load the required libraries
 library(XML)
 library(plyr)
 library(dplyr)
 
 # Set the path to the folder containing XML files
-path <- "./tax-return-parser/files/"
+path <- "./Source/tax-return-parser/xml"
 
 # Get a list of all XML files in the folder
 files <- list.files(path, pattern = ".xml$", full.names = TRUE)
 
-# Define a function to read an XML file and convert it to a data frame
-read_xml_to_df <- function(file_path) {
-  doc <- xmlParse(file_path)
-  xml_df <- xmlToDataFrame(nodes=getNodeSet(doc, "//doc:Filer",namespaces =
-                                              c(doc="http://www.irs.gov/efile")))
-  return(xml_df)
-}
-
-# Apply the function to each XML file and combine the results into a single data frame
-df_filer <- ldply(files, read_xml_to_df)
-
-# create an empty dictionary
-columns990 <<- list()
+# Specify the properties that should be read from the 990 document.
+columns_990 <<- list(
+  "GrossReceiptsAmt"="GrossReceiptsAmt",
+  "NetIncomeFromGamingGrp"="NetIncomeFromGamingGrp"
+)
 
 read_xml_to_df2 <- function(file_path) {
   doc <- xmlParse(file_path)
-  
+
   xml_990 <- xmlToDataFrame(nodes=getNodeSet(doc, "//doc:IRS990",namespaces = c(doc="http://www.irs.gov/efile")))
-  
-  if (length(columns990) == 0) {
-    # fill the dictionary with column names
-    columns990 <<- setNames(as.list(names(xml_990)), names(xml_990))
-    columns990 <<- columns990[which(names(columns990) != "NA")]
-  }
-  
-  same_columns <- intersect(names(xml_990), names(columns990))
-  
-  # select only the columns that are in the dictionary
-  common_xml_990 <- xml_990 %>% select(same_columns)
-  
-  xml_df2 <- xmlToDataFrame(nodes=getNodeSet(doc, "//doc:Filer",namespaces =
+
+  # The 990 has lots of properties and several repeatable nodes which leads to problems converting to a datatable.
+  # So reading the entire node, but then removing every column except for those defined in columns_990 before combining all the dataframes together.
+  selected_columns <- intersect(names(xml_990), names(columns_990))
+  df_990 <- xml_990 %>% select(all_of(selected_columns))
+
+  df_filer <- xmlToDataFrame(nodes=getNodeSet(doc, "//doc:Filer",namespaces =
                                                c(doc="http://www.irs.gov/efile")))
-  xml_df3 <- xmlToDataFrame(nodes=getNodeSet(doc, "//doc:TaxYr", namespaces =
+  df_taxYr <- xmlToDataFrame(nodes=getNodeSet(doc, "//doc:TaxYr", namespaces =
                                                c(doc="http://www.irs.gov/efile")))
   
-  xml_df3$taxyr <- xml_df3$text
-  xml_df4 <- xmlToDataFrame(nodes=getNodeSet(doc, "//doc:TaxPeriodEndDt", namespaces =
+  df_taxYr$taxyr <- df_taxYr$text
+  #remove the text column
+  df_taxYr$text <- NULL
+  
+  df_taxPeriodEndDt <- xmlToDataFrame(nodes=getNodeSet(doc, "//doc:TaxPeriodEndDt", namespaces =
                                                c(doc="http://www.irs.gov/efile")))
-  xml_df4$taxperiod_end <- xml_df4$text
-  combined <- cbind(xml_df2, xml_df3, xml_df4, common_xml_990)
+  
+  df_taxPeriodEndDt$taxperiod_end <- df_taxPeriodEndDt$text
+  #remove the text column
+  df_taxPeriodEndDt$text <- NULL
+  
+  combined <- cbind(df_filer, df_taxYr, df_taxPeriodEndDt, df_990)
+  
   return(combined)
 }
 
-# Apply the function to each XML file and combine the results into a single data frame
-df <- ldply(files, read_xml_to_df2)
+# Read each file in to a list of dataframes
+df_list <- list()
+for (i in seq_along(files)) {
+  df <- read_xml_to_df2(files[i])
+  df_list[[i]] <- df
+}
+
+# Unions each dataframe and matches on the column names to output a datatable.
+my_df <- bind_rows(df_list)
