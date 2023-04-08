@@ -1,7 +1,10 @@
 # Load the required libraries
-library(XML)
+library(xml2)
 library(plyr)
 library(dplyr)
+library(tibble)
+library(tidyverse)
+library(tidyr)
 
 # Set the path to the folder containing XML files
 path <- "./Source/tax-return-parser/xml"
@@ -168,17 +171,37 @@ columns_990 <<- list(
 )
 
 read_xml_to_df2 <- function(file_path) {
+  # Read the xml file
+  doc_data <- xml_ns_strip(read_xml(file_path))
+  doc_990 <- xml_find_all(doc_data, xpath = "//IRS990")
+  fields_990 = xml_children(doc_990)
+  values = as.list(xml_text(fields_990))
+  columns = as.list(xml_name(fields_990))
+  
+  # Bind the names and values into a matrix based on index
+  matrix <- cbind(columns, values)
+  
+  # Convert the matrix into a data frame
+  df990 <- as.data.frame(matrix)
+  
+  # detect and remove repeated nodes since that messes things up in the pivot.
+  dups <- df990 %>%
+    dplyr::group_by(columns) %>%
+    dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
+    dplyr::filter(n > 1L) 
+  df_filtered <- subset(df990, !(columns %in% dups$columns))
+  
+  df_pivoted <- pivot_wider(df_filtered, names_from = columns, values_from = values)
+  
+  lp_df = df_pivoted %>%
+    unnest(cols = names(.)) %>%
+    readr::type_convert() 
+  
+  # Even after removing dups, some columns were getting mapped weird, so removing anything we don't expect to see.
+  selected_columns <- intersect(names(lp_df), names(columns_990))
+  lp_df <- lp_df %>% select(all_of(selected_columns))
+  
   doc <- xmlParse(file_path)
-
-  xml_990 <- xmlToDataFrame(nodes=getNodeSet(doc, "//doc:IRS990",namespaces = c(doc="http://www.irs.gov/efile")))
-  
-  # Uncomment this line to print all the columns available in the 990
-  # print(names(xml_990))
-  
-  # The 990 has lots of properties and several repeatable nodes which leads to problems converting to a datatable.
-  # So reading the entire node, but then removing every column except for those defined in columns_990 before combining all the dataframes together.
-  selected_columns <- intersect(names(xml_990), names(columns_990))
-  df_990 <- xml_990 %>% select(all_of(selected_columns))
 
   df_filer <- xmlToDataFrame(nodes=getNodeSet(doc, "//doc:Filer",namespaces =
                                                c(doc="http://www.irs.gov/efile")))
@@ -196,7 +219,7 @@ read_xml_to_df2 <- function(file_path) {
   #remove the text column
   df_taxPeriodEndDt$text <- NULL
   
-  combined <- cbind(df_filer, df_taxYr, df_taxPeriodEndDt, df_990)
+  combined <- cbind(df_filer, df_taxYr, df_taxPeriodEndDt, lp_df)
   
   return(combined)
 }
